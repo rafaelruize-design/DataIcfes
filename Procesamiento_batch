@@ -1,0 +1,90 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, count, mean, stddev, min, max
+
+# ==========================================================
+# 1️⃣ Crear sesión de Spark
+# ==========================================================
+spark = SparkSession.builder \
+    .appName("SaberProDescriptiveAnalysis") \
+    .getOrCreate()
+
+spark.sparkContext.setLogLevel("WARN")
+
+# ==========================================================
+# 2️⃣ Cargar datos
+# ==========================================================
+data_path = "/home/rruiz414/saberpro.csv"
+
+df = spark.read.option("header", True).option("inferSchema", True).csv(data_path)
+
+print("✅ Datos cargados correctamente")
+print(f"Filas: {df.count()} | Columnas: {len(df.columns)}")
+print("Columnas detectadas:")
+print(df.columns)
+
+
+# ==========================================================
+# 3️⃣ Mostrar estructura y ejemplo de datos
+# ==========================================================
+print("=== ESQUEMA DE LOS DATOS ===")
+df.printSchema()
+
+print("=== MUESTRA DE LOS DATOS ===")
+df.show(10, truncate=False)
+
+# ==========================================================
+# 4️⃣ Estadísticas descriptivas generales
+# ==========================================================
+print("=== ESTADÍSTICAS DESCRIPTIVAS ===")
+df.describe().show()
+
+# ==========================================================
+# 5️⃣ Conteo total de registros y columnas
+# ==========================================================
+print("=== CONTEO GENERAL ===")
+print(f"Total de filas: {df.count()}")
+print(f"Total de columnas: {len(df.columns)}")
+
+# ==========================================================
+# 6️⃣ Tablas descriptivas agrupadas (si existen columnas clave)
+# ==========================================================
+# ⚠️ Ajusta los nombres de columnas según las que existan en tu CSV.
+# Ejemplos típicos: 'ESTU_GENERO', 'INST_NOMBRE_INSTITUCION', 'PROG_NOMBRE_PROGRAMA'
+
+# Distribución por género
+if 'ESTU_GENERO' in df.columns:
+    print("=== DISTRIBUCIÓN POR GÉNERO ===")
+    df.groupBy("ESTU_GENERO").count().show()
+
+# Promedios por institución
+if 'INST_NOMBRE_INSTITUCION' in df.columns and 'PUNT_GLOBAL' in df.columns:
+    print("=== PROMEDIO GLOBAL POR INSTITUCIÓN ===")
+    df.groupBy("INST_NOMBRE_INSTITUCION") \
+      .agg(mean("PUNT_GLOBAL").alias("PROMEDIO_GLOBAL")) \
+      .orderBy(col("PROMEDIO_GLOBAL").desc()) \
+      .show(10, truncate=False)
+
+# Promedios por programa académico
+if 'PROG_NOMBRE_PROGRAMA' in df.columns and 'PUNT_GLOBAL' in df.columns:
+    print("=== PROMEDIO GLOBAL POR PROGRAMA ===")
+    df.groupBy("PROG_NOMBRE_PROGRAMA") \
+      .agg(mean("PUNT_GLOBAL").alias("PROMEDIO_GLOBAL")) \
+      .orderBy(col("PROMEDIO_GLOBAL").desc()) \
+      .show(10, truncate=False)
+
+# ==========================================================
+# 7️⃣ Medidas de dispersión para una variable numérica
+# ==========================================================
+if 'PUNT_GLOBAL' in df.columns:
+    print("=== MEDIDAS DE DISPERSIÓN DE PUNT_GLOBAL ===")
+    df.select(
+        mean("PUNT_GLOBAL").alias("MEDIA"),
+        stddev("PUNT_GLOBAL").alias("DESV_STD"),
+        min("PUNT_GLOBAL").alias("MIN"),
+        max("PUNT_GLOBAL").alias("MAX")
+    ).show()
+
+# ==========================================================
+# 8️⃣ Finalizar sesión
+# ==========================================================
+spark.stop()
