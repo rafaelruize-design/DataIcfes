@@ -1,0 +1,82 @@
+## Productor Kafka: traffic_producer.py
+
+import time
+import json
+import random
+from kafka import KafkaProducer
+
+def generate_traffic_data():
+    zones = ["Norte", "Sur", "Este", "Oeste", "Centro"]
+    return {
+        "zone": random.choice(zones),
+        "vehicles": random.randint(50, 200),
+        "avg_speed": round(random.uniform(20, 120), 2),
+        "timestamp": int(time.time())
+    }
+
+producer = KafkaProducer(
+    bootstrap_servers=['localhost:9092'],
+    value_serializer=lambda x: json.dumps(x).encode('utf-8')
+)
+
+print("🚗 Enviando datos de tráfico en tiempo real...")
+while True:
+    data = generate_traffic_data()
+    producer.send('traffic_data', value=data)
+    print(f"Sent: {data}")
+    time.sleep(2)
+
+
+
+
+# Consumidor Spark Streaming: spark_traffic_consumer.py
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import from_json, col, window, avg, sum
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, TimestampType
+from pyspark.sql.functions import to_timestamp
+
+# Definir esquema
+schema = StructType([
+    StructField("zone", StringType()),
+    StructField("vehicles", IntegerType()),
+    StructField("avg_speed", FloatType()),
+    StructField("timestamp", IntegerType())
+])
+
+spark = SparkSession.builder \
+    .appName("RealTimeTrafficAnalysis") \
+    .getOrCreate()
+
+spark.sparkContext.setLogLevel("WARN")
+
+# Leer datos desde Kafka
+df = spark.readStream.format("kafka") \
+    .option("kafka.bootstrap.servers", "localhost:9092") \
+    .option("subscribe", "traffic_data") \
+    .load()
+
+# Parsear JSON
+parsed_df = df.select(from_json(col("value").cast("string"), schema).alias("data")).select("data.*")
+
+# Convertir timestamp a formato legible
+parsed_df = parsed_df.withColumn("event_time", to_timestamp(col("timestamp")))
+
+# Calcular estadísticas por ventana de 1 minuto
+traffic_stats = parsed_df.groupBy(
+    window(col("event_time"), "1 minute"),
+    col("zone")
+).agg(
+    avg("avg_speed").alias("avg_speed_minute"),
+    sum("vehicles").alias("total_vehicles")
+)
+
+# Mostrar resultados en consola
+query = traffic_stats.writeStream \
+    .outputMode("complete") \
+    .format("console") \
+    .option("truncate", False) \
+    .start()
+
+query.awaitTermination()
+
